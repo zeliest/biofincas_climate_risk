@@ -1,6 +1,9 @@
 from pathlib import Path
 
-DATA_DIR = Path("/Users/szelie/data/unu")
+DATA_DIR = Path("/Users/szelie/data/biofincas")
+
+bbox = (-115, 10, -50, 25)  # (lon_min, lat_min, lon_max, lat_max) # general bounding box used in different scripts
+
 
 RASTER_PATHS = {
     "dominican_republic": {
@@ -97,8 +100,10 @@ REGION_BOUNDS = {
 
 # TerraClimate paths by scenario
 TERRACLIMATE_PATHS = {
-    "plus2C": Path("/Users/szelie/data/unu/terra_climate_scenarios_2c"),
-    "historical": Path("/Users/szelie/data/unu/terra_climate/")
+    "plus2C": DATA_DIR / "terra_climate_scenarios_ncss/plus2C",
+        "plus4C": DATA_DIR / "terra_climate_scenarios_ncss/plus4C",
+
+    "historical":  DATA_DIR / "terra_climate"
 }
 
 # Default parameters for hazard simulation
