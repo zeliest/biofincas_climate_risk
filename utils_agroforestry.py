@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 from pygbif import occurrences as gbif
 import time
 from config import DATA_DIR
-from climada.entity import Exposures, ImpactFuncSet
+from climada.entity import Exposures, ImpactFuncSet, ImpactFunc
 
 # === Land cover value mapping ===
 LAND_COVER_LOOKUP = {
