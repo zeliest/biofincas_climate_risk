@@ -1,6 +1,7 @@
 from pathlib import Path
 
 DATA_DIR = Path("/Users/szelie/data/biofincas")
+FIGURES_DIR = Path('/Users/szelie/Dropbox/Applications/Overleaf/biodiversity_climate_coffee_cacao/figures')
 
 bbox = (-115, 10, -50, 25)  # (lon_min, lat_min, lon_max, lat_max) # general bounding box used in different scripts
 
