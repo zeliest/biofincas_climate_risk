@@ -46,7 +46,6 @@ This repository provides tools and workflows for building, evaluating, and analy
    - Supporting files: `species_thresholds.json`, plus utility modules (`utils_agroforestry.py`, `utils_hazards.py`, `utils_suitability_modelling.py`).
 
 3. **Cost–Benefit Analysis** (`cost_benefit/`)  
-   - `make_canopy_alternatives.ipynb`: create canopy composition scenarios.  
    - `CostBenefit_Canopy.ipynb`: perform cost–benefit evaluation.  
    - Utility: `utils_cb.py`.
 
