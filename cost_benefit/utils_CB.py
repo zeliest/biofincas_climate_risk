@@ -47,6 +47,17 @@ DR_TYPICAL_PLANTS_PER_HA = { # plants per hectare
     "Banana": 2000,
 }
 
+# Set the yiled and price for other crops (USD per tonne)
+## The "Region_key": "DR" deoent matter just place it here
+FX_RD_USD = 50.0  # RD$ -> USD, Price/tonne = usd_per_kg * 1000 / FX
+# 1) DR fruit table (kg/plant + RD$/kg) -> Tonnes/plant + Price/tonnes (USD)
+YIELD_PRICE_USD = [
+    {"Region_key": "DR", "Scientific name": "Citrus spp.",      "Kg/plant": 40, "usd_per_kg": 40/ FX_RD_USD},
+    {"Region_key": "DR", "Scientific name": "Persea americana", "Kg/plant": 50, "usd_per_kg": 30/ FX_RD_USD},
+    {"Region_key": "DR", "Scientific name": "Pouteria sapota",  "Kg/plant": 40, "usd_per_kg": 90/ FX_RD_USD},
+    {"Region_key": "DR", "Scientific name": "Castanea spp.",    "Kg/plant": 70, "usd_per_kg": 80/ FX_RD_USD},
+]
+
 # species we care about Scientific names, species names
 TARGETS = {
     "Coffea arabica":   ("Coffee (main crop)", "Coffee"),
@@ -88,9 +99,23 @@ COSTS_DICT_USD = {
     },
 }
 
+# Set a default planting and maintenance cost for role = secondary crop if missing
+DEF_PLANT_COST_SECONDARY = 1.0  # USD per tree
+DEF_MAIN_COST_SECONDARY = 0.5  # USD per tree
 
 #%% Functio to add teh costsa and prices to the pregenerated agroforestry_systems
-def write_adjusted( excel_file, OUTPUT_DIR = OUTPUT_DIR):
+def write_adjusted( excel_file, OUTPUT_DIR = OUTPUT_DIR, price_mult=1.0, plant_cost_mult=1.0, maint_cost_mult=1.0):
+    """
+    Read the agrosystem excel file, adjust it to ensure all main species are present,
+    backfill missing species in other sheets, and add economic data (yield, price, costs).
+    Save the adjusted 'present' sheet to a new Excel file in the OUTPUT_DIR.
+    Parameters:
+    - excel_file: Path to the input Excel file with canopy compositions.
+    - OUTPUT_DIR: Directory to save the output Excel file.
+    - price_mult: Multiplier for the price of secondary species (e.g., fruit shade).
+    - cost_mult: Multiplier for the planting cost of all species.
+    - maint_mult: Multiplier for the maintenance cost of all species.
+    """
 
     excel_file = Path(excel_file)
     print(f"Using input excel file: {excel_file}")
@@ -366,19 +391,11 @@ def write_adjusted( excel_file, OUTPUT_DIR = OUTPUT_DIR):
 
     zelie_present_df.drop(columns=["Yield (t/ha/year)"], inplace=True, errors='ignore')
 
-    FX = 50.0  # RD$ -> USD, Price/tonne = rd_per_kg * 1000 / FX
 
-    # 1) DR fruit table (kg/plant + RD$/kg) -> Tonnes/plant + Price/tonnes (USD)
-    rows_rd = [
-        {"Region_key": "DR", "Scientific name": "Citrus spp.",      "Kg/plant": 40, "rd_per_kg": 40},
-        {"Region_key": "DR", "Scientific name": "Persea americana", "Kg/plant": 50, "rd_per_kg": 30},
-        {"Region_key": "DR", "Scientific name": "Pouteria sapota",  "Kg/plant": 40, "rd_per_kg": 90},
-        {"Region_key": "DR", "Scientific name": "Castanea spp.",    "Kg/plant": 70, "rd_per_kg": 80},
-    ]
-    df1 = pd.DataFrame(rows_rd)
+    df1 = pd.DataFrame(YIELD_PRICE_USD)
     df1["Tonnes/plant"] = df1["Kg/plant"] / 1000.0
-    df1["Price/tonnes (USD)"] = (df1["rd_per_kg"] * 1000.0 / FX).round(2)
-    df1 = df1.drop(columns=["rd_per_kg"])[["Region_key","Scientific name","Kg/plant","Tonnes/plant","Price/tonnes (USD)"]]
+    df1["Price/tonnes (USD)"] = (df1["usd_per_kg"] * 1000.0).round(2)
+    df1 = df1.drop(columns=["usd_per_kg"])[["Region_key","Scientific name","Kg/plant","Tonnes/plant","Price/tonnes (USD)"]]
 
 
     # Update your 'typ' list (Coffee already has 1800)
@@ -567,9 +584,9 @@ def write_adjusted( excel_file, OUTPUT_DIR = OUTPUT_DIR):
     # 1) Make fruit shade less dominant and bump O&M for all secondary trees
     zelie_present_adjusted_incl_price_df = adjust_secondary_econ(
         zelie_present_adjusted_df,
-        price_mult=1.0,                      # 70% of previous price for Secondary (fruit shade)
-        plant_cost_mult=1.0,                 # 0% chnage planting cost
-        maint_cost_mult=1.0,                 # 0% chnage maintenance
+        price_mult=price_mult,                      # 70% of previous price for Secondary (fruit shade)
+        plant_cost_mult=plant_cost_mult,                 # 0% chnage planting cost
+        maint_cost_mult=maint_cost_mult,                 # 0% chnage maintenance
     )
 
     excel_dict = copy.deepcopy(canopy_crop_zelie_dict_adjusted)
@@ -612,6 +629,18 @@ def write_adjusted( excel_file, OUTPUT_DIR = OUTPUT_DIR):
     # ## Save excel version 
     # Save the adjusted DataFrame to an Excel file
     print(f"Input file: {excel_file} with type {type(excel_file)}")
+
+    # Update excel_dict presne so that each secondary species has default costs if missing
+    # Default planting cost
+    excel_dict['present'].loc[
+    (excel_dict['present']['Role'] == 'Secondary') & (excel_dict['present']['Planting cost (per tree)'].isna()),
+    'Planting cost (per tree)'
+    ] = DEF_PLANT_COST_SECONDARY
+    # Default maintenance cost
+    excel_dict['present'].loc[
+        (excel_dict['present']['Role'] == 'Secondary') & (excel_dict['present']['Maintenance cost (per tree)'].isna()),
+        'Maintenance cost (per tree)'
+    ] = DEF_MAIN_COST_SECONDARY
 
     # Safe way with pathlib
     file_name = excel_file.stem + "_adjusted_canopy_crop_composition.xlsx"
