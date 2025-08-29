@@ -51,7 +51,7 @@ This repository provides tools and workflows for building, evaluating, and analy
    - Utility: `utils_cb.py`.
 
 4. **Experiments**  
-   Use the `experiments/` directory for exploratory and ad-hoc analyses.
+   If you are brave enough, those are experiments that we tried. We do not guarantee that it works or that they are well documented.
 
 ---
 
