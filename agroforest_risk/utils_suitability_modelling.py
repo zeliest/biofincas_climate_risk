@@ -8,6 +8,8 @@ import os
 from shapely.geometry import Point
 import xarray as xr
 import geopandas as gpd
+import statsmodels.api as sm
+from sklearn.metrics import confusion_matrix
 
 
 def clean_species_name(name: str) -> str:
@@ -232,4 +234,94 @@ def get_gbif_occurrences_for_species(species_list, wkt_bbox, year_min=1960):
     else:
         return pd.DataFrame(columns=["species_query", "decimalLongitude", "decimalLatitude"])
 
+
+def clean_occurrences(df, max_isolate_distance_deg=0.5, thinning_deg=2.5/60):
+    """
+    Clean occurrence points per species by:
+    1. Removing isolated points farther than `max_isolate_distance_deg` from all others.
+    2. Applying spatial thinning so that only 1 point is kept per grid cell of size `thinning_deg`.
+
+    Parameters
+    ----------
+    df : pd.DataFrame
+        DataFrame with columns: species (or species_query), decimalLongitude, decimalLatitude.
+    max_isolate_distance_deg : float
+        Maximum allowed distance (in degrees) for a point to have a neighbour. 
+        Points farther than this from all others are removed.
+    thinning_deg : float
+        Grid cell size for thinning, in degrees. Default 2.5 arc‑min (~0.0416667°).
+
+    Returns
+    -------
+    pd.DataFrame
+        Cleaned DataFrame of occurrences.
+    """
+
+    def remove_isolated_points(species_df):
+        coords = species_df[["decimalLongitude", "decimalLatitude"]].to_numpy()
+        keep_idx = []
+        for i, c in enumerate(coords):
+            dists = np.sqrt((coords[:,0] - c[0])**2 + (coords[:,1] - c[1])**2)
+            dists[i] = np.inf  # ignore self
+            if np.any(dists < max_isolate_distance_deg):
+                keep_idx.append(i)
+        return species_df.iloc[keep_idx]
+
+    def thin_points(species_df):
+        # Assign grid cell indices
+        grid_x = np.floor(species_df["decimalLongitude"] / thinning_deg)
+        grid_y = np.floor(species_df["decimalLatitude"] / thinning_deg)
+        species_df = species_df.assign(grid_x=grid_x, grid_y=grid_y)
+        # Randomly sample 1 point per grid cell
+        thinned = species_df.groupby(["grid_x", "grid_y"], group_keys=False).apply(
+            lambda g: g.sample(1, random_state=42)
+        )
+        return thinned.drop(columns=["grid_x", "grid_y"])
+
+    cleaned_species_list = []
+    for species, group in df.groupby("species_query" if "species_query" in df.columns else "species"):
+        # 1️⃣ Remove extreme isolates
+        non_isolated = remove_isolated_points(group)
+        # 2️⃣ Apply spatial thinning
+        thinned = thin_points(non_isolated)
+        print(f"{species}: {len(group)} → {len(thinned)} after cleaning")
+        cleaned_species_list.append(thinned)
+
+    return pd.concat(cleaned_species_list, ignore_index=True)
+
+def drop_correlated(df, predictors, threshold=0.85):
+    corr = df[predictors].corr().abs()
+    upper = corr.where(np.triu(np.ones(corr.shape), k=1).astype(bool))
+    to_drop = [col for col in upper.columns if any(upper[col] > threshold)]
+    keep = [p for p in predictors if p not in to_drop]
+    return keep, to_drop
+
+def calculate_vif(df, predictors):
+    X = df[predictors].dropna()
+    vif_data = pd.DataFrame()
+    vif_data["feature"] = predictors
+    vif_data["VIF"] = [sm.OLS(X[col], sm.add_constant(X.drop(columns=[col]))).fit().rsquared for col in X.columns]
+    vif_data["VIF"] = 1 / (1 - vif_data["VIF"])
+    return vif_data
+
+def drop_high_vif(df, predictors, threshold=10):
+    vif_data = calculate_vif(df, predictors)
+    to_drop = vif_data.loc[vif_data["VIF"] > threshold, "feature"].tolist()
+    keep = [p for p in predictors if p not in to_drop]
+    return keep, to_drop, vif_data
+
+def max_sens_spec_threshold(y_true, y_prob):
+    thresholds = np.linspace(0, 1, 101)
+    best_thresh = 0.5
+    best_score = -1
+    for thr in thresholds:
+        y_pred = (y_prob >= thr).astype(int)
+        tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+        sens = tp / (tp + fn) if tp + fn > 0 else 0
+        spec = tn / (tn + fp) if tn + fp > 0 else 0
+        score = sens + spec
+        if score > best_score:
+            best_score = score
+            best_thresh = thr
+    return best_thresh
 

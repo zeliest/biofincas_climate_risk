@@ -13,57 +13,106 @@ from climate_indices.compute import Periodicity
 def clip_to_region(ds, lat_bounds, lon_bounds):
     return ds.sel(lat=slice(*lat_bounds), lon=slice(*lon_bounds))
 
+from pathlib import Path
+import xarray as xr
+import glob
+
+def _glob_tc(path, var):
+    """
+    Find TerraClimate files for variable `var` under `path`, handling both:
+      - historical: TerraClimate_<var>_*.nc
+      - scenarios:  TerraClimate_<scenario>_<var>_*.nc  (e.g., plus2C/plus4C)
+    Returns a sorted list of Paths.
+    """
+    p = Path(path)
+    patterns = [
+        f"TerraClimate_{var}_*.nc",         # historical
+        f"TerraClimate_*_{var}_*.nc",       # scenarios (catch-all)
+    ]
+    files = []
+    for pat in patterns:
+        files.extend(p.glob(pat))
+    files = sorted(set(files))
+    return files
+
+def _open_da(files, var):
+    """Open multiple NetCDFs and return DataArray `var` with coords ordered (time, lat, lon) if present."""
+    if not files:
+        raise FileNotFoundError(f"No files found for variable '{var}'.")
+    ds = xr.open_mfdataset([str(f) for f in files], combine="by_coords")
+    da = ds[var]
+    # Ensure a consistent axis order when dims exist
+    dims = list(da.dims)
+    order = [d for d in ["time", "lat", "lon", "y", "x"] if d in dims]
+    if order:
+        da = da.transpose(*order)
+    return da
+
 def get_aggregates(path, variables=("tmean", "ppt", "ppt_monthly", "pet_monthly")):
     """
-    Load a subset of TerraClimate variables.
+    Load TerraClimate variables from `path`.
 
     Parameters
     ----------
-    path : Path
-        Directory containing NetCDFs.
-    variables : list/tuple
-        Which variables to load. Options: "tmean", "ppt", "ppt_monthly", "pet_monthly".
+    path : str or Path
+        Directory containing NetCDFs (historical or scenario).
+    variables : iterable
+        Any of: "tmean", "ppt", "ppt_monthly", "pet_monthly".
 
     Returns
     -------
     dict
-        Dictionary mapping variable name -> xarray.DataArray
+        var name -> xarray.DataArray
     """
     results = {}
 
+    # --- tmean ---
     if "tmean" in variables:
-        import glob
-        tmean_files = glob.glob(f"{path}/TerraClimate_tmean_*.nc")
-
-        if tmean_files:  # Case 1: tmean files exist
-            ds_tmean = xr.open_mfdataset(tmean_files, combine="by_coords")
-            results["tmean"] = ds_tmean.tmean
-        else:            # Case 2: compute from tmax + tmin
-            print("⚠️ No tmean files found — computing from tmax and tmin...")
-            ds_tmax = xr.open_mfdataset(f"{path}/TerraClimate_tmax_*.nc", combine="by_coords")
-            ds_tmin = xr.open_mfdataset(f"{path}/TerraClimate_tmin_*.nc", combine="by_coords")
-            tmean = (ds_tmax.tmax + ds_tmin.tmin) / 2
+        tmean_files = _glob_tc(path, "tmean")
+        if tmean_files:
+            results["tmean"] = _open_da(tmean_files, "tmean")
+        else:
+            # compute from tmax / tmin if direct tmean is absent
+            tmax_files = _glob_tc(path, "tmax")
+            tmin_files = _glob_tc(path, "tmin")
+            if not tmax_files or not tmin_files:
+                raise FileNotFoundError(
+                    "tmean not found and cannot compute from tmax/tmin (missing one of them)."
+                )
+            tmax = _open_da(tmax_files, "tmax")
+            tmin = _open_da(tmin_files, "tmin")
+            tmean = (tmax + tmin) / 2
             tmean.name = "tmean"
             results["tmean"] = tmean
 
+    # --- ppt (monthly totals) ---
     if "ppt" in variables:
-        ds_ppt = xr.open_mfdataset(f"{path}/TerraClimate_ppt_*.nc", combine="by_coords")
-        results["ppt"] = ds_ppt.ppt
+        ppt_files = _glob_tc(path, "ppt")
+        results["ppt"] = _open_da(ppt_files, "ppt")
 
-    if "ppt_monthly" in variables or "pet_monthly" in variables:
-        ds_ppt = xr.open_mfdataset(f"{path}/TerraClimate_ppt_*.nc", combine="by_coords")
-        ds_pet = xr.open_mfdataset(f"{path}/TerraClimate_pet_*.nc", combine="by_coords")
-        if "ppt_monthly" in variables:
-            results["ppt_monthly"] = ds_ppt.ppt
-        if "pet_monthly" in variables:
-            results["pet_monthly"] = ds_pet.pet
+    # --- monthly series (ppt/pet) ---
+    if "ppt_monthly" in variables:
+        ppt_files = _glob_tc(path, "ppt")
+        results["ppt_monthly"] = _open_da(ppt_files, "ppt")
+
+    if "pet_monthly" in variables:
+        pet_files = _glob_tc(path, "pet")
+        results["pet_monthly"] = _open_da(pet_files, "pet")
 
     return results
 
 
     
-def compute_spei_3(ppt, pet):
-    clim = ppt - pet
+def compute_spei_3(ppt, pet, calib_start=1981, calib_end=2010):
+    # Ensure expected dims and monthly continuity
+    clim = (ppt - pet).transpose("time", "lat", "lon")
+    ppt  = ppt.transpose("time", "lat", "lon")
+    pet  = pet.transpose("time", "lat", "lon")
+
+    # Basic check
+    assert clim.indexes["time"].inferred_type == "datetime64", "Time must be datetime"
+    # (Optionally check for monthly frequency / missing months)
+
     out = np.full(clim.shape, np.nan)
     start_year = int(clim.time.dt.year.values[0])
     n_months = clim.sizes["time"]
@@ -73,23 +122,28 @@ def compute_spei_3(ppt, pet):
             ppt_series = ppt[:, i, j].values.astype(float)
             pet_series = pet[:, i, j].values.astype(float)
 
+            # Skip empty cells
             if np.isnan(ppt_series).all() or np.isnan(pet_series).all():
                 continue
+
+            # Gentler gap fill (per series)
             if np.isnan(ppt_series).any():
-                ppt_series[np.isnan(ppt_series)] = np.nanmean(ppt_series)
+                m = np.isfinite(ppt_series)
+                ppt_series[~m] = np.interp(np.flatnonzero(~m), np.flatnonzero(m), ppt_series[m])
             if np.isnan(pet_series).any():
-                pet_series[np.isnan(pet_series)] = np.nanmean(pet_series)
+                m = np.isfinite(pet_series)
+                pet_series[~m] = np.interp(np.flatnonzero(~m), np.flatnonzero(m), pet_series[m])
 
             try:
                 spei_series = spei(
                     precips_mm=ppt_series,
                     pet_mm=pet_series,
                     scale=3,
-                    distribution=Distribution.gamma,
+                    distribution=Distribution.loglogistic,     # ✅ SPEI uses log-logistic
                     periodicity=Periodicity.monthly,
                     data_start_year=start_year,
-                    calibration_year_initial=start_year,
-                    calibration_year_final=start_year + (n_months // 12) - 1
+                    calibration_year_initial=calib_start,      # ✅ fixed baseline
+                    calibration_year_final=calib_end
                 )
                 out[:, i, j] = spei_series
             except Exception as e:
@@ -99,9 +153,10 @@ def compute_spei_3(ppt, pet):
     return xr.DataArray(
         out,
         coords={"time": clim.time, "lat": clim.lat, "lon": clim.lon},
-        dims=["time", "lat", "lon"]
+        dims=["time", "lat", "lon"],
+        name="SPEI3"
     )
-
+    
 def generate_gev_sample_field(dataarray, n_years=100, start_year=2101, invert=False):
     synthetic_years = np.arange(start_year, start_year + n_years)
 

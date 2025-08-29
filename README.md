@@ -10,24 +10,25 @@ This repository provides tools and workflows for building, evaluating, and analy
 ```
 
 .
-├── Build\_typical\_agroforest\_plot.ipynb  # Generate typical agroforestry plots
-├── agroforestry\_systems/               # Excel outputs of typical plots
-├── agroforest\_risk/                    # Risk analysis workflows
-│   ├── get\_point\_locations.ipynb       # Gather species occurrence points
-│   ├── suitability\_typical\_agroforest\_plots.ipynb  # Run suitability models
-│   ├── risk\_agroforest\_system.ipynb    # Compute risk (suitability loss + extreme weather)
-│   ├── species\_thresholds.json         # Thresholds for suitability analysis
-│   ├── utils\_agroforestry.py           # Agroforestry helper functions
-│   ├── utils\_hazards.py                # Hazard helper functions
-│   └── utils\_suitability\_modelling.py  # Suitability modelling functions
-├── cost\_benefit/                       # Cost–benefit evaluation workflows
-│   ├── make\_canopy\_alternatives.ipynb  # Generate canopy composition scenarios
-│   ├── utils\_cb.py                     # Helpers for cost–benefit routines
-│   └── CostBenefit\_Canopy.ipynb        # Main cost–benefit analysis notebook
-├── climate\_data/                       # Climate datasets and preprocessing
-├── experiments/                        # Exploratory / test notebooks
-├── config.py                           # Central configuration (paths for data, outputs)
-├── README.md                           # This documentation file
+├── agroforestry_systems/                # Typical agroforestry plot generation
+│   ├── Build_typical_agroforest_plot.ipynb  # Generate typical agroforestry plots
+│   └── *.xlsx                           # Excel outputs of typical plots
+├── agroforest_risk/                     # Risk analysis workflows
+│   ├── get_point_locations.ipynb        # Gather species occurrence points
+│   ├── suitability_typical_agroforest_plots.ipynb  # Run suitability models
+│   ├── risk_agroforest_system.ipynb     # Compute risk (suitability loss + extreme weather)
+│   ├── species_thresholds.json          # Thresholds for suitability analysis
+│   ├── utils_agroforestry.py            # Agroforestry helper functions
+│   ├── utils_hazards.py                 # Hazard helper functions
+│   └── utils_suitability_modelling.py   # Suitability modelling functions
+├── cost_benefit/                        # Cost–benefit evaluation workflows
+│   ├── make_canopy_alternatives.ipynb   # Generate canopy composition scenarios
+│   ├── utils_cb.py                      # Helpers for cost–benefit routines
+│   └── CostBenefit_Canopy.ipynb         # Main cost–benefit analysis notebook
+├── climate_data/                        # Climate datasets and preprocessing
+├── experiments/                         # Exploratory / test notebooks
+├── config.py                            # Central configuration (paths for data, outputs)
+├── README.md                            # This documentation file
 
 ````
 
@@ -43,7 +44,7 @@ This repository provides tools and workflows for building, evaluating, and analy
    - `get_point_locations.ipynb`: collect occurrence points for coffee, cacao, and associated species.  
    - `suitability_typical_agroforest_plots.ipynb`: apply suitability models to the typical plots.  
    - `risk_agroforest_system.ipynb`: compute risk by combining impacts from suitability loss and extreme weather.  
-   - Supporting files: `species_thresholds.json`, plus utility modules (`utils_agroforestry.py`, `utils_hazards.py`, `utils_suitability_modelling.py`).
+   - Supporting files: `species_thresholds.json` generated in the suitability modelling, plus utility modules (`utils_agroforestry.py`, `utils_hazards.py`, `utils_suitability_modelling.py`).
 
 3. **Cost–Benefit Analysis** (`cost_benefit/`)  
    - `CostBenefit_Canopy.ipynb`: perform cost–benefit evaluation.  
